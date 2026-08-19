@@ -1,3 +1,8 @@
+import streamlit as st
+import psycopg2
+
+# Database Connection
+conn = psycopg2.connect(st.secrets["DB_URI"])
 from datetime import datetime
 import io
 from gtts import gTTS
