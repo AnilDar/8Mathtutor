@@ -2,7 +2,8 @@ from datetime import datetime
 import io
 from gtts import gTTS
 import pandas as pd
-import pyodbc
+import psycopg2
+conn = psycopg2.connect(st.secrets["DB_URI"])
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.naive_bayes import MultinomialNB
 from sklearn.pipeline import make_pipeline
