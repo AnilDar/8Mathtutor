@@ -1,6 +1,5 @@
 streamlit
-google-genai
-gTTS
-pandas
+google-generativeai
 psycopg2-binary
 scikit-learn
+gTTS
