@@ -177,7 +177,7 @@ with col_title:
     st.subheader("📚 Tutor for Grace Darnal")
 
 with col_img:
-    st.image(r"D:\grace.jpeg", width=130)
+    st.image("grace.jpeg", width=130)
 
 tab1, tab2 = st.tabs(["💬 AI Student Chat", "📝 Log Session to Database"])
 
