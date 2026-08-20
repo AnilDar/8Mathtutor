@@ -235,7 +235,7 @@ with tab1:
                 f"Question: {user_text}"
             )
             response = client.models.generate_content(
-                model="gemini-2.5-flash", contents=system_prompt
+                model="gemini-3.6-flash", contents=system_prompt
             )
             answer = response.text
 
@@ -247,7 +247,7 @@ with tab1:
         with st.spinner("Analyzing audio..."):
             try:
                 response = client.models.generate_content(
-                    model="gemini-2.5-flash",
+                    model="gemini-3.6-flash",
                     contents=[
                         (
                             "System: You are an encouraging Class 8 Math tutor"
