@@ -1,47 +1,35 @@
-import streamlit as st
-import psycopg2
-
-# Database Connection
-conn = psycopg2.connect(st.secrets["DB_URI"])
-from datetime import datetime
 import io
+from datetime import datetime
+import google.genai as genai
+from google.genai import types
 from gtts import gTTS
 import pandas as pd
 import psycopg2
-conn = psycopg2.connect(st.secrets["DB_URI"])
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.naive_bayes import MultinomialNB
 from sklearn.pipeline import make_pipeline
 import streamlit as st
 
-import google.genai as genai
-from google.genai import types
-
 # ==========================================
 # 1. DATABASE CONFIGURATION & FUNCTIONS
 # ==========================================
-CONN_STR = (
-    "Driver={ODBC Driver 17 for SQL Server};"
-    "Server=Anil\\SQLEXPRESS;"
-    "Database=TutorDB;"
-    "Trusted_Connection=yes;"
-)
+
+def get_db_connection():
+    """Establish connection to Supabase PostgreSQL using secrets."""
+    return psycopg2.connect(st.secrets["DB_URI"])
 
 
 def get_subject_details(topic):
-    """Fetch Hourly_rate and Default_tutor from Subject_rates table."""
+    """Fetch hourly_rate and default_tutor from subject_rates table."""
     try:
-        with pyodbc.connect(CONN_STR) as conn:
-            cursor = conn.cursor()
-            query = (
-                "SELECT Hourly_rate, Default_tutor FROM Subject_rates WHERE"
-                " topic = ?"
-            )
-            cursor.execute(query, (topic,))
-            row = cursor.fetchone()
-            if row:
-                return row.Hourly_rate, row.Default_tutor
-            return None, None
+        with get_db_connection() as conn:
+            with conn.cursor() as cursor:
+                query = "SELECT hourly_rate, default_tutor FROM subject_rates WHERE topic = %s"
+                cursor.execute(query, (topic,))
+                row = cursor.fetchone()
+                if row:
+                    return row[0], row[1]
+                return None, None
     except Exception:
         return None, None
 
@@ -49,40 +37,40 @@ def get_subject_details(topic):
 def log_tutoring_session(
     session_date, topic, tutor, login_time, logout_time, total_time, fees
 ):
-    """Insert logged session record into Tutoring_Sessions table."""
-    with pyodbc.connect(CONN_STR) as conn:
-        cursor = conn.cursor()
-        query = """
-            INSERT INTO Tutoring_Sessions 
-            (SessionDate, Topic, Tutor, Login_time, Logout_time, totaltime, Fees)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-        """
-        cursor.execute(
-            query,
-            (
-                session_date,
-                topic,
-                tutor,
-                login_time.strftime("%H:%M:%S"),
-                logout_time.strftime("%H:%M:%S"),
-                total_time,
-                fees,
-            ),
-        )
-        conn.commit()
+    """Insert logged session record into tutoring_sessions table."""
+    with get_db_connection() as conn:
+        with conn.cursor() as cursor:
+            query = """
+                INSERT INTO tutoring_sessions 
+                (sessiondate, topic, tutor, login_time, logout_time, totaltime, fees)
+                VALUES (%s, %s, %s, %s, %s, %s, %s)
+            """
+            cursor.execute(
+                query,
+                (
+                    session_date,
+                    topic,
+                    tutor,
+                    login_time.strftime("%H:%M:%S"),
+                    logout_time.strftime("%H:%M:%S"),
+                    total_time,
+                    fees,
+                ),
+            )
+            conn.commit()
 
 
 def log_to_chat_history(user_query, tutor_response):
-    """Insert interaction into ChatHistory table using exact SSMS schema."""
+    """Insert interaction into chathistory table."""
     try:
-        with pyodbc.connect(CONN_STR) as conn:
-            cursor = conn.cursor()
-            query = """
-                INSERT INTO ChatHistory (UserQuery, TutorResponse)
-                VALUES (?, ?)
-            """
-            cursor.execute(query, (user_query, tutor_response))
-            conn.commit()
+        with get_db_connection() as conn:
+            with conn.cursor() as cursor:
+                query = """
+                    INSERT INTO chathistory (userquery, tutorresponse)
+                    VALUES (%s, %s)
+                """
+                cursor.execute(query, (user_query, tutor_response))
+                conn.commit()
     except Exception as e:
         st.error(f"Failed to record ChatHistory: {e}")
 
@@ -136,8 +124,12 @@ def train_intent_router():
 
 router_model = train_intent_router()
 
-# Initialize Gemini API Client
-client = genai.Client(api_key="AIzaSyDrGHEIKo-anWxl6f75xKKiaSt9ZUUIQqs")
+# Initialize Gemini API Client securely from Streamlit Secrets
+client = genai.Client(api_key=st.secrets["GEMINI_API_KEY"])
+
+# Initialize session state counter for resetting input widgets
+if "session_counter" not in st.session_state:
+    st.session_state.session_counter = 0
 
 # ==========================================
 # 3. STREAMLIT APPLICATION LAYOUT & STYLING
@@ -185,14 +177,28 @@ tab1, tab2 = st.tabs(["💬 AI Student Chat", "📝 Log Session to Database"])
 # TAB 1: AI STUDENT CHAT (INTENT ROUTER)
 # ------------------------------------------
 with tab1:
-    st.markdown("#### Student AI Interaction")
+    header_col, reset_col = st.columns([7, 3], vertical_alignment="center")
+    
+    with header_col:
+        st.markdown("#### Student AI Interaction")
+    
+    with reset_col:
+        if st.button("🔄 Start New Chat / Clear", use_container_width=True):
+            st.session_state.session_counter += 1
+            st.rerun()
+
     selected_topic = st.selectbox(
         "Select Session Topic",
         ["Math", "Quadrilaterals", "Exponents", "Algebra", "General Query"],
+        key=f"topic_{st.session_state.session_counter}"
     )
 
     st.subheader("1. Speak to AI")
-    audio_input = st.audio_input("Click the mic to record your question")
+    # Dynamic key forces Streamlit to render a fresh, unrecorded audio widget on reset
+    audio_input = st.audio_input(
+        "Click the mic to record your question", 
+        key=f"audio_input_{st.session_state.session_counter}"
+    )
 
     def process_query(user_text):
         intent = router_model.predict([user_text])[0]
@@ -233,7 +239,7 @@ with tab1:
             )
             answer = response.text
 
-        # Automatically log interaction to SSMS ChatHistory
+        # Automatically log interaction to Supabase ChatHistory
         log_to_chat_history(user_text, answer)
         return answer
 
@@ -255,13 +261,15 @@ with tab1:
                 )
                 st.markdown(f"**AI Tutor:** {response.text}")
                 log_to_chat_history("[Voice Input]", response.text)
-		# Add language selector in your Streamlit UI
-                speech_lang = st.radio("Voice Language", ["en", "ne"], format_func=lambda x: "English" if x == "en" else "Nepali")
 
-                # Pass selected language code dynamically
+                speech_lang = st.radio(
+                    "Voice Language",
+                    ["en", "ne"],
+                    format_func=lambda x: "English" if x == "en" else "Nepali",
+                    key=f"lang_{st.session_state.session_counter}"
+                )
+
                 tts = gTTS(text=response.text, lang=speech_lang)
-
-                
                 sound_file = io.BytesIO()
                 tts.write_to_fp(sound_file)
                 sound_file.seek(0)
@@ -272,7 +280,7 @@ with tab1:
     st.divider()
 
     st.subheader("2. Or Type Your Question")
-    if text_prompt := st.chat_input("Type your math query here..."):
+    if text_prompt := st.chat_input("Type your math query here...", key=f"chat_{st.session_state.session_counter}"):
         with st.chat_message("user"):
             st.markdown(text_prompt)
 
@@ -303,7 +311,7 @@ with tab2:
 
             if hourly_rate is None:
                 st.error(
-                    f"Topic '{topic}' was not found in Subject_rates table."
+                    f"Topic '{topic}' was not found in subject_rates table."
                 )
             else:
                 dummy_date = datetime.today().date()
