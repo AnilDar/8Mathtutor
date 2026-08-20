@@ -125,7 +125,7 @@ def train_intent_router():
 router_model = train_intent_router()
 
 # Initialize Gemini API Client securely from Streamlit Secrets
-client = genai.Client(api_key=st.secrets["GEMINI_API_KEY"])
+client = genai.Client(api_key=st.secrets["AIzaSyDrGHEIKo-anWxl6f75xKKiaSt9ZUUIQqs"])
 
 # Initialize session state counter for resetting input widgets
 if "session_counter" not in st.session_state:
